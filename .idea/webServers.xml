@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="d122c473-b458-4a1c-82b6-849416ad62ef" name="dayu" url="http://10.26.118.77:6816">
+        <fileTransfer port="0" mountedRoot="C:\" accessType="MOUNT" />
+      </webServer>
+    </option>
+  </component>
+</project>

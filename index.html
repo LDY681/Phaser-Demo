@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>demo</title>
+  <script src="//cdn.jsdelivr.net/npm/phaser@3.18.1/dist/phaser.min.js"></script>
+  <script src="http://hammerjs.github.io/dist/hammer.min.js"></script>
+  <style type="text/css">
+    body {
+      margin: 0;
+      background: lightblue no-repeat fixed center;
+    }
+  </style>
+</head>
+<body id="body">
+
+<script type="text/javascript">
+    var config = {
+        type: Phaser.AUTO,
+        scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+            width: 1080,
+            height: 1920
+        },
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: {y: 500},
+                debug: false
+            }
+        },
+        scene: {
+            preload: preload,
+            create: create,
+            update: update
+        },
+    };
+
+    //根据config创建游戏
+    var game = new Phaser.Game(config);
+    //将整个body作为手势范围
+    var body = document.getElementById('body');
+    var hammertime = new Hammer(body);
+    function preload() {
+        this.load.image('sky', 'assets/sky.png');
+        this.load.image('ground', 'assets/platform.png');
+        this.load.image('star', 'assets/star.png');
+        this.load.image('bomb', 'assets/bomb.png');
+        this.load.spritesheet('dude', 'assets/dude.png', {frameWidth: 32, frameHeight: 48});
+    }
+
+    var platforms;  //static Group,只有位置和尺寸
+    var stars;  //dynamic Group, 受速度,加速度等力量影响,会回弹和碰撞
+    var scoreText;
+    var healthText;
+    var timeText;
+    var gameOverText;
+    var gameover = false;
+    var score = 0;
+    var health = 3;
+    var timer;
+    var panleft, panright, tap = false;
+    function create() {
+        //背景
+        this.add.image(0, 0, 'sky').setOrigin(0).setScale(5);  //位置是图片的中心，从topleft计算
+        //平台
+        platforms = this.physics.add.staticGroup(); //create a new Static Physics Group and assigns it to the local variable platforms
+        platforms.create(0, 1888, 'ground').setScale(10,2).refreshBody(); //放大两倍并刷新以应用改变
+        platforms.create(600, 1720, 'ground');
+        platforms.create(50, 1600, 'ground');
+        platforms.create(750, 1540, 'ground');
+        platforms.create(80, 1380, 'ground').setScale(2,1).refreshBody();
+        platforms.create(550, 1250, 'ground');
+        platforms.create(800, 1120, 'ground');
+        platforms.create(50, 980, 'ground');
+        platforms.create(1000, 980, 'ground');
+        platforms.create(550, 880, 'ground');
+
+        //精灵
+        player = this.physics.add.sprite(100, 1700, 'dude');
+        player.setBounce(0.2);  //弹跳反馈
+        player.setCollideWorldBounds(true); //设置游戏的边界
+
+        //动画
+          this.anims.create({
+            key: 'left',
+            frames: this.anims.generateFrameNumbers('dude', { start: 0, end: 3 }),  //spritesheet的0到3帧
+            frameRate: 10,
+            repeat: -1  //loop
+        });
+
+        this.anims.create({
+            key: 'turn',
+            frames: [ { key: 'dude', frame: 4 } ],
+            frameRate: 20
+        });
+
+        this.anims.create({
+            key: 'right',
+            frames: this.anims.generateFrameNumbers('dude', { start: 5, end: 8 }),
+            frameRate: 10,
+            repeat: -1
+        });
+
+        //星星
+        stars = this.physics.add.group();
+        for (var i = 0; i < 12; i++) {
+            var x = Phaser.Math.RND.between(80, 1000);
+            var y = Phaser.Math.RND.between(1000, 1800);
+            stars.create(x, y, 'star');
+        }
+
+        stars.children.iterate(function (child) {
+            child.setBounce(Phaser.Math.FloatBetween(0.2, 0.4));
+        });
+
+        //炸弹
+        bombs = this.physics.add.group();
+
+        //添加碰撞,重叠等物理情景
+        //world, overlapOnly, object1, object2, collideCallback(碰撞以后的回调函数), processCallback(碰撞以后的回调函数,必须返回boolean), callbackContext(调用回调函数的作用域)
+        this.physics.add.collider(bombs, platforms);
+        this.physics.add.collider(player, platforms);
+        this.physics.add.collider(stars, platforms);
+        this.physics.add.collider(player, bombs, hitBomb, null, this);
+        this.physics.add.overlap(player, stars, collectStar, null, this);
+
+        //得分和血量显示
+        scoreText = this.add.text(16, 16, '分数: 0', { fontSize: '32px', fill: '#000' });
+        healthText = this.add.text(800, 16, '血量: 3', { fontSize: '32px', fill: '#000' });
+        timeText = this.add.text(400, 16, '倒计时: 60 秒', { fontSize: '32px', fill: '#000' });
+
+        //手势左滑,右滑,点击,停止滑动
+        hammertime.on("panleft panright panend tap", function(ev) {
+            console.log(ev.type);
+            if (ev.type === "panleft"){
+                panleft = true;
+                panright = false;
+            }else if (ev.type === "panright"){
+                panleft = false;
+                panright = true;
+            }else if (ev.type === "tap"){
+                tap = true;
+            }else{
+                panleft = false;
+                panright = false;
+            }
+        });
+
+        timer = this.time.addEvent({ delay: 60000, callback: gameOver, callbackScope: this });
+    }
+
+    function update() {
+        if (gameover){
+            return;
+        }
+        if (panleft) {
+            player.setVelocityX(-330);
+            player.anims.play('left', true);
+        }else if (panright){
+            player.setVelocityX(330);
+            player.anims.play('right', true);
+        }else {
+            player.setVelocityX(0);
+            player.anims.play('turn');
+        }
+        if (tap){
+            tap = false;
+            player.setVelocityY(-400);
+        }
+
+        timeText.setText('倒计时: '+ (Math.floor(60000 - timer.getElapsed())/1000).toString().substr(0,2) + "秒");
+    }
+
+    function collectStar (player, star)
+    {
+        star.disableBody(true, true);
+        score += 10;
+        scoreText.setText('分数: ' + score);
+
+        if (stars.countActive(true) === 0)  //true=active,false=inactive
+        {
+            stars.children.iterate(function (child) {
+                child.enableBody(true, Phaser.Math.RND.between(80, 1000), Phaser.Math.RND.between(1000, 1800), true, true);
+            });
+
+            var x = (player.x < 540) ? Phaser.Math.Between(540, 1080) : Phaser.Math.Between(0, 540);
+
+            var bomb = bombs.create(x, Phaser.Math.RND.between(1000, 1800), 'bomb');
+            bomb.setBounce(1);
+            bomb.setMass(0.2);
+            bomb.setCollideWorldBounds(true);
+            bomb.setVelocity(Phaser.Math.Between(-400, 400), Phaser.Math.Between(-400, 400));
+        }
+    }
+
+    function hitBomb (player, bomb) {
+        health -= 1;
+        healthText.setText('血量: ' + health);
+        player.setTint(0xff0000);
+        player.anims.play('turn');
+        if (health === 0){
+            gameOver = true;
+            this.physics.pause();
+            gameOverText = this.add.text(300, 800, 'GAME OVER', { fontSize: '100px', fill: '#ffd700' });
+        }else{
+            setInterval(function(){
+                player.clearTint();
+            }, 500);
+        }
+    }
+
+    function gameOver ()
+    {
+        gameOver = true;
+        this.physics.pause();
+        gameOverText = this.add.text(300, 800, 'GAME OVER', { fontSize: '100px', fill: '#ffd700' });
+    }
+</script>
+
+</body>
+</html>
